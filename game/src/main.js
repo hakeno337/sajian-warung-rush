@@ -12,7 +12,7 @@ import { nearestStation, stationById } from './world.js';
 import { Cooking } from './cooking.js';
 import { Orders } from './orders.js';
 import { Chef } from './chef.js';
-import { render } from './render.js';
+import { render, ticketCenterX } from './render.js';
 import { poseShot } from './shots.js';
 
 const canvas = document.getElementById('game');
@@ -52,6 +52,13 @@ class Game {
     this.resetKitchen(1);
     const shot = new URLSearchParams(location.search).get('shot');
     if (shot) poseShot(this, shot);
+    else if (this.state === 'title') {
+      // Park the cook by the serving hatch on the plain title screen,
+      // so the menu row is not hidden behind the chef.
+      this.chef.x = 1050;
+      this.chef.y = 570;
+      this.chef.facing = -1;
+    }
   }
 
   resetKitchen(day) {
@@ -117,7 +124,7 @@ class Game {
     this.combo = 0;
     this.expiredCount += 1;
     const index = Math.max(0, this.orders.list.indexOf(order));
-    this.popup(150 + index * 292 + 136, 210, 'Walked away!', '#e8483f', 19);
+    this.popup(ticketCenterX(index), 210, 'Walked away!', '#e8483f', 19);
     if (this.stars <= 0 && this.state === 'playing') this.endDay(true);
   }
 

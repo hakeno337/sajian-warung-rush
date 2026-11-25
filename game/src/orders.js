@@ -54,6 +54,7 @@ export class Orders {
       patienceMax: patience,
       patienceLeft: patience,
       born: elapsed,
+      look: this.rng.int(0, 9), // which of the 10 regulars is waiting
     };
     this.list.push(order);
     return order;

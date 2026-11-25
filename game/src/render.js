@@ -6,9 +6,20 @@
 
 import { COMPONENTS, FLOOR, INGREDIENTS, VIEW_H, VIEW_W } from './config.js';
 import { STATIONS, standPoint } from './world.js';
+import { drawCustomer } from './customers.js';
 
 const INK = '#3a2415';
 const CREAM = '#fff6e0';
+const GOLD = '#d4a017';
+
+// Ticket rail layout: four tickets fit the 1280-wide wall with room to
+// spare (v1's 150/292 layout pushed the fourth ticket off-screen).
+export const TICKET_X0 = 100;
+export const TICKET_STEP = 287;
+export const TICKET_W = 272;
+export function ticketCenterX(i) {
+  return TICKET_X0 + i * TICKET_STEP + TICKET_W / 2;
+}
 
 function rr(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -21,6 +32,59 @@ function text(ctx, str, x, y, size, colour, align = 'left', weight = 700) {
   ctx.textAlign = align;
   ctx.textBaseline = 'middle';
   ctx.fillText(str, x, y);
+}
+
+// Text with a dark outline, for anything that sits on a busy background
+// (HUD, station labels, prices): readable at full size and at thumbnail.
+function textOutlined(ctx, str, x, y, size, colour, align = 'left', weight = 800, outline = 'rgba(43,24,10,0.9)') {
+  ctx.font = `${weight} ${size}px "Trebuchet MS", "Segoe UI", sans-serif`;
+  ctx.textAlign = align;
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = outline;
+  ctx.lineWidth = Math.max(2.5, size / 7);
+  ctx.strokeText(str, x, y);
+  ctx.fillStyle = colour;
+  ctx.fillText(str, x, y);
+}
+
+// Display lettering: a bold serif with a hard outline and a warm offset
+// shadow — the signboard look, not the default sans.
+function displayText(ctx, str, x, y, size, colour, align = 'center') {
+  ctx.font = `800 ${size}px "Liberation Serif", "DejaVu Serif", Georgia, serif`;
+  ctx.textAlign = align;
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  ctx.fillStyle = 'rgba(120,20,10,0.85)';
+  ctx.fillText(str, x + 4, y + 6);
+  ctx.strokeStyle = '#2b180a';
+  ctx.lineWidth = Math.max(4, size / 11);
+  ctx.strokeText(str, x, y);
+  const grad = ctx.createLinearGradient(0, y - size / 2, 0, y + size / 2);
+  grad.addColorStop(0, '#ffe98a');
+  grad.addColorStop(0.55, colour);
+  grad.addColorStop(1, '#e8a33d');
+  ctx.fillStyle = grad;
+  ctx.fillText(str, x, y);
+}
+
+// A batik-style border strip: dark band, gold diamonds and dots.
+function batikStrip(ctx, x, y, w, h = 12) {
+  ctx.save();
+  ctx.fillStyle = '#5d1f16';
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = '#ffd94d';
+  const step = 26;
+  for (let bx = x + step / 2; bx < x + w; bx += step) {
+    ctx.beginPath();
+    ctx.moveTo(bx, y + 2); ctx.lineTo(bx + 5, y + h / 2); ctx.lineTo(bx, y + h - 2); ctx.lineTo(bx - 5, y + h / 2);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(255,217,77,0.7)';
+  for (let bx = x + step; bx < x + w; bx += step) {
+    ctx.beginPath(); ctx.arc(bx, y + h / 2, 1.6, 0, 7); ctx.fill();
+  }
+  ctx.restore();
 }
 
 // --- food icons ---------------------------------------------------------
@@ -201,6 +265,56 @@ function drawRoom(ctx, game) {
     ctx.beginPath(); ctx.moveTo(0, FLOOR.y + rI * tile); ctx.lineTo(VIEW_W, FLOOR.y + rI * tile); ctx.stroke();
   }
 
+  // A woven rug in the middle of the floor, so the chef works on
+  // something warm instead of bare tile.
+  ctx.fillStyle = '#8a2f24';
+  rr(ctx, 470, 400, 340, 120, 12); ctx.fill();
+  ctx.strokeStyle = '#ffd94d'; ctx.lineWidth = 3;
+  rr(ctx, 480, 410, 320, 100, 8); ctx.stroke();
+  ctx.fillStyle = '#ffd94d';
+  for (let rx = 512; rx < 780; rx += 44) {
+    ctx.beginPath();
+    ctx.moveTo(rx, 440); ctx.lineTo(rx + 8, 460); ctx.lineTo(rx, 480); ctx.lineTo(rx - 8, 460);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = '#6e241c';
+  ctx.beginPath(); ctx.arc(640, 460, 20, 0, 7); ctx.fill();
+  ctx.fillStyle = '#ffd94d';
+  ctx.beginPath(); ctx.arc(640, 460, 12, 0, 7); ctx.fill();
+  ctx.fillStyle = '#8a2f24';
+  ctx.beginPath(); ctx.arc(640, 460, 5, 0, 7); ctx.fill();
+
+  // Potted plant in the top-right corner of the floor.
+  ctx.fillStyle = '#b0613c';
+  ctx.beginPath();
+  ctx.moveTo(1216, 236); ctx.lineTo(1256, 236); ctx.lineTo(1249, 272); ctx.lineTo(1223, 272);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#4d9427';
+  for (const [dx, dy, r] of [[-12, -14, 11], [0, -22, 13], [12, -13, 11], [-6, -6, 9], [7, -5, 9]]) {
+    ctx.beginPath(); ctx.ellipse(1236 + dx, 238 + dy, r, r * 0.7, dx * 0.04, 0, 7); ctx.fill();
+  }
+
+  // Warm light pools on the wall, left and right of the ticket rail.
+  const glow = (gx) => {
+    const g = ctx.createRadialGradient(gx, 120, 10, gx, 120, 130);
+    g.addColorStop(0, 'rgba(255,214,130,0.5)');
+    g.addColorStop(1, 'rgba(255,214,130,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(gx - 130, 44, 260, 152);
+  };
+  glow(60);
+  glow(1220);
+
+  // Wall clock in the gap left of the first ticket.
+  ctx.fillStyle = '#fdfdf8';
+  ctx.beginPath(); ctx.arc(50, 118, 26, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#8a5a33'; ctx.lineWidth = 4; ctx.stroke();
+  ctx.strokeStyle = '#241408'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(50, 118); ctx.lineTo(50, 100); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(50, 118); ctx.lineTo(62, 122); ctx.stroke();
+  ctx.fillStyle = '#241408';
+  ctx.beginPath(); ctx.arc(50, 118, 2.5, 0, 7); ctx.fill();
+
   // Left crate wall and the bottom counter.
   ctx.fillStyle = '#8a5a33';
   ctx.fillRect(0, FLOOR.y, 132, FLOOR.h + 20);
@@ -210,6 +324,9 @@ function drawRoom(ctx, game) {
   ctx.fillRect(0, FLOOR.y, 132, 14);
   ctx.fillStyle = 'rgba(0,0,0,0.15)';
   ctx.fillRect(126, FLOOR.y, 6, FLOOR.h + 20);
+  // Batik trim along the counter's top edge (right of the crate wall,
+  // so the Eggs label stays clear).
+  batikStrip(ctx, 132, 624, VIEW_W - 132, 12);
 }
 
 function drawStation(ctx, game, station, active) {
@@ -267,6 +384,24 @@ function drawStation(ctx, game, station, active) {
         ctx.beginPath(); ctx.arc(sx, 0, 21, 0, 7); ctx.fill();
         if (!slot) return;
         drawFood(ctx, slot.phase === 'burnt' ? 'burnt' : slot.item, sx, 0, 17);
+        // Steam curls rise off anything hot; a done slot sizzles.
+        if (slot.phase === 'cooking' || slot.phase === 'done') {
+          ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+          ctx.lineWidth = 2.5;
+          for (const ox of [-8, 4]) {
+            ctx.beginPath();
+            ctx.moveTo(sx + ox, -18);
+            ctx.bezierCurveTo(sx + ox - 5, -28, sx + ox + 5, -34, sx + ox - 2, -44);
+            ctx.stroke();
+          }
+        }
+        if (slot.phase === 'done') {
+          ctx.strokeStyle = '#ffd94d';
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.moveTo(sx - 14, -34); ctx.lineTo(sx - 9, -40); ctx.lineTo(sx - 4, -34); ctx.lineTo(sx + 1, -40);
+          ctx.stroke();
+        }
         if (slot.phase === 'cooking') ring(ctx, sx, 0, 24, slot.t / slot.cook, '#7ec850');
         if (slot.phase === 'done') {
           ring(ctx, sx, 0, 24, 1 - slot.t / slot.burn, '#ffc93c');
@@ -312,7 +447,11 @@ function drawStation(ctx, game, station, active) {
       break;
   }
   ctx.restore();
-  text(ctx, station.label, x, y + 52, 13, station.x <= 100 ? '#5d3a1f' : CREAM, 'center', 700);
+  // Gold-trimmed station label: outlined text over a short gold rule.
+  const labelColour = station.x <= 100 ? '#ffd94d' : CREAM;
+  textOutlined(ctx, station.label, x, y + 50, 13, labelColour, 'center', 800);
+  ctx.fillStyle = GOLD;
+  ctx.fillRect(x - 24, y + 60, 48, 2.5);
 }
 
 function ring(ctx, x, y, r, frac, colour) {
@@ -329,9 +468,9 @@ function ring(ctx, x, y, r, frac, colour) {
 function drawTickets(ctx, game) {
   const orders = game.orders.list;
   orders.forEach((order, i) => {
-    const x = 150 + i * 292;
+    const x = TICKET_X0 + i * TICKET_STEP;
     const y = 56;
-    const w = 272;
+    const w = TICKET_W;
     const h = 128;
     const urgent = order.patienceLeft < order.patienceMax * 0.3;
     ctx.save();
@@ -340,10 +479,13 @@ function drawTickets(ctx, game) {
     rr(ctx, x + 4, y + 5, w, h, 10); ctx.fill();
     ctx.fillStyle = CREAM;
     rr(ctx, x, y, w, h, 10); ctx.fill();
+    // Gold trim along the card's top edge.
+    ctx.fillStyle = GOLD;
+    ctx.fillRect(x + 10, y, w - 20, 4);
     ctx.fillStyle = '#d84a35';
     ctx.beginPath(); ctx.arc(x + w / 2, y + 4, 7, 0, 7); ctx.fill();
     text(ctx, order.recipe.name, x + 14, y + 24, 19, INK, 'left', 800);
-    text(ctx, `$${order.recipe.price}`, x + w - 14, y + 24, 19, '#2e7d32', 'right', 800);
+    textOutlined(ctx, `$${order.recipe.price}`, x + w - 14, y + 24, 20, '#c9920e', 'right', 800, 'rgba(59,32,10,0.55)');
     order.recipe.needs.forEach((need, j) => {
       drawFood(ctx, need, x + 30 + j * 44, y + 62, 17);
     });
@@ -360,20 +502,29 @@ function drawTickets(ctx, game) {
   }
 }
 
+// The customers waiting under their tickets, standing at the counter
+// below the rail — one per order, mood matched to its patience.
+function drawCustomers(ctx, game) {
+  if (game.state === 'over') return;
+  game.orders.list.forEach((order, i) => {
+    drawCustomer(ctx, order, ticketCenterX(i), 296);
+  });
+}
+
 function drawHud(ctx, game) {
   ctx.fillStyle = '#402a1a';
   ctx.fillRect(0, 0, VIEW_W, 44);
-  text(ctx, `DAY ${game.day}`, 18, 22, 20, '#ffd94d', 'left', 800);
+  textOutlined(ctx, `DAY ${game.day}`, 18, 22, 20, '#ffd94d', 'left', 800);
   // Day clock: a draining bar with a sun at the live end.
   const frac = Math.max(0, game.timeLeft / game.dayLength);
   ctx.fillStyle = 'rgba(255,255,255,0.18)';
   rr(ctx, 130, 15, 420, 14, 7); ctx.fill();
   ctx.fillStyle = frac > 0.25 ? '#7ec850' : '#e8483f';
   if (frac > 0) { rr(ctx, 130, 15, 420 * frac, 14, 7); ctx.fill(); }
-  text(ctx, `${Math.ceil(game.timeLeft)}s`, 566, 22, 17, CREAM, 'left', 800);
-  text(ctx, `🪙 ${game.coins}`, 700, 22, 20, '#ffd94d', 'left', 800);
+  textOutlined(ctx, `${Math.ceil(game.timeLeft)}s`, 566, 22, 17, CREAM, 'left', 800);
+  textOutlined(ctx, `🪙 ${game.coins}`, 700, 22, 20, '#ffd94d', 'left', 800);
   if (game.combo >= 2) {
-    text(ctx, `🔥 COMBO ×${(1 + (game.combo - 1) * 0.25).toFixed(2).replace(/\.?0+$/, '')}`, 830, 22, 18, '#ff9a3d', 'left', 800);
+    textOutlined(ctx, `🔥 COMBO ×${(1 + (game.combo - 1) * 0.25).toFixed(2).replace(/\.?0+$/, '')}`, 830, 22, 18, '#ff9a3d', 'left', 800);
   }
   // Stars: the stall's rating, lost one per walked-away ticket.
   for (let i = 0; i < 3; i++) {
@@ -384,33 +535,71 @@ function drawHud(ctx, game) {
 
 function drawChef(ctx, game) {
   const chef = game.chef;
-  const bobY = chef.moving ? Math.sin(chef.bob) * 2.5 : 0;
+  const bobY = chef.moving ? Math.sin(chef.bob) * 3 : 0;
   const shakeX = chef.nudge > 0 ? Math.sin(game.time * 70) * 3 : 0;
+  // Squash-and-stretch while walking, and a lean into the board while
+  // chopping — the movement reads even in a still frame.
+  const stretch = chef.moving ? Math.sin(chef.bob) * 0.06 : 0;
+  const lean = chef.chopT > 0 ? 0.14 * chef.facing : 0;
   ctx.save();
   ctx.translate(chef.x + shakeX, chef.y + bobY);
+  ctx.rotate(lean);
+  ctx.scale(1.22 + stretch, 1.22 - stretch);
   ctx.fillStyle = 'rgba(0,0,0,0.25)';
   ctx.beginPath(); ctx.ellipse(0, 26 - bobY, 24, 8, 0, 0, 7); ctx.fill();
-  // Body: teal shirt, white apron.
+  // Legs, mid-stride when moving.
+  ctx.fillStyle = '#3a3230';
+  const stride = chef.moving ? Math.sin(chef.bob) * 5 : 0;
+  ctx.fillRect(-11 + stride, 14, 9, 14);
+  ctx.fillRect(2 - stride, 14, 9, 14);
+  // Body: teal shirt, white apron with a pocket.
   ctx.fillStyle = '#2e8b8b';
   rr(ctx, -19, -6, 38, 34, 10); ctx.fill();
   ctx.fillStyle = '#fdfdf8';
   rr(ctx, -13, 2, 26, 26, 6); ctx.fill();
-  // Head and toque.
+  ctx.strokeStyle = '#c9cfd4'; ctx.lineWidth = 1.5;
+  ctx.strokeRect(-9, 12, 12, 9);
+  // Red neckerchief.
+  ctx.fillStyle = '#d84a35';
+  ctx.beginPath(); ctx.moveTo(-8, -8); ctx.lineTo(8, -8); ctx.lineTo(0, 2); ctx.closePath(); ctx.fill();
+  // Arms: the front arm reaches toward whatever the hands hold.
+  ctx.fillStyle = '#2e8b8b';
+  ctx.beginPath(); ctx.ellipse(-21, 8, 5.5, 12, 0.3, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(21, 8, 5.5, 12, -0.3, 0, 7); ctx.fill();
+  ctx.fillStyle = '#f2c188';
+  ctx.beginPath(); ctx.arc(-24, 18, 4.5, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(24, 18, 4.5, 0, 7); ctx.fill();
+  // Head: a face, not a blank — eyes, brows, smile, blush — and a
+  // tall toque with folds.
   ctx.fillStyle = '#f2c188';
   ctx.beginPath(); ctx.arc(0, -22, 15, 0, 7); ctx.fill();
   ctx.fillStyle = '#fdfdf8';
   rr(ctx, -13, -44, 26, 14, 6); ctx.fill();
   ctx.beginPath(); ctx.arc(-7, -44, 8, 0, 7); ctx.arc(7, -44, 8, 0, 7); ctx.arc(0, -48, 9, 0, 7); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(-13, -38); ctx.lineTo(13, -38); ctx.stroke();
+  // Eyes with whites and pupils, brows, smile, blush.
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.ellipse(chef.facing * 4 - 5, -23, 3.4, 4, 0, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(chef.facing * 4 + 5, -23, 3.4, 4, 0, 0, 7); ctx.fill();
   ctx.fillStyle = INK;
+  ctx.beginPath(); ctx.arc(chef.facing * 4 - 5, -23, 1.8, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(chef.facing * 4 + 5, -23, 1.8, 0, 7); ctx.fill();
+  ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
   ctx.beginPath();
-  ctx.arc(chef.facing * 4 - 5, -22, 1.8, 0, 7);
-  ctx.arc(chef.facing * 4 + 5, -22, 1.8, 0, 7);
-  ctx.fill();
-  // What the hands hold, in front.
+  ctx.moveTo(chef.facing * 4 - 9, -29); ctx.lineTo(chef.facing * 4 - 1, -29);
+  ctx.moveTo(chef.facing * 4 + 1, -29); ctx.lineTo(chef.facing * 4 + 9, -29);
+  ctx.stroke();
+  ctx.beginPath(); ctx.arc(chef.facing * 2, -16, 4.5, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+  ctx.fillStyle = 'rgba(232,120,90,0.55)';
+  ctx.beginPath(); ctx.arc(-11, -17, 3, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(11, -17, 3, 0, 7); ctx.fill();
+  // What the hands hold, in front — squash-and-stretch on the plate
+  // when a dish is served (pop scale handled by the popup rise).
   if (chef.carry) {
     const hx = chef.facing * 20;
     if (chef.carry.type === 'item') drawFood(ctx, chef.carry.id, hx, 12, 16);
-    else drawPlate(ctx, chef.carry.items, hx, 12, 21);
+    else drawPlate(ctx, chef.carry.items, hx, 12, 24);
   }
   ctx.restore();
 }
@@ -432,24 +621,56 @@ function drawFx(ctx, game) {
 
 // --- screens --------------------------------------------------------------
 function drawTitle(ctx, game) {
-  ctx.fillStyle = 'rgba(43,24,10,0.72)';
+  ctx.fillStyle = 'rgba(43,24,10,0.62)';
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-  text(ctx, 'SAJIAN!', 640, 218, 92, '#ffd94d', 'center', 800);
-  text(ctx, '— WARUNG RUSH —', 640, 282, 30, '#ffb35c', 'center', 800);
-  text(ctx, 'Run the stall: take tickets, chop, grill, plate and serve before patience runs out.', 640, 336, 20, CREAM, 'center', 600);
+  // Batik frame around the whole cover.
+  batikStrip(ctx, 0, 0, VIEW_W, 14);
+  batikStrip(ctx, 0, VIEW_H - 14, VIEW_W, 14);
+  ctx.save();
+  ctx.translate(VIEW_W, 0); ctx.rotate(Math.PI / 2);
+  batikStrip(ctx, 0, 0, VIEW_H, 14);
+  ctx.restore();
+  ctx.save();
+  ctx.translate(0, VIEW_H); ctx.rotate(-Math.PI / 2);
+  batikStrip(ctx, 0, 0, VIEW_H, 14);
+  ctx.restore();
+  // Wooden signboard behind the title, gold-trimmed.
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  rr(ctx, 308, 138, 664, 190, 18); ctx.fill();
+  ctx.fillStyle = '#8a5a33';
+  rr(ctx, 300, 130, 664, 190, 18); ctx.fill();
+  ctx.strokeStyle = '#ffd94d'; ctx.lineWidth = 4;
+  rr(ctx, 308, 138, 648, 174, 14); ctx.stroke();
+  ctx.fillStyle = '#ffd94d';
+  for (const [dx, dy] of [[322, 152], [942, 152], [322, 296], [942, 296]]) {
+    ctx.beginPath();
+    ctx.moveTo(dx, dy - 6); ctx.lineTo(dx + 6, dy); ctx.lineTo(dx, dy + 6); ctx.lineTo(dx - 6, dy);
+    ctx.closePath(); ctx.fill();
+  }
+  displayText(ctx, 'SAJIAN!', 640, 216, 96, '#ffd94d');
+  ctx.font = '800 32px "Liberation Serif", "DejaVu Serif", Georgia, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#2b180a'; ctx.lineWidth = 5;
+  ctx.strokeText('— WARUNG RUSH —', 640, 284);
+  ctx.fillStyle = '#ffb35c';
+  ctx.fillText('— WARUNG RUSH —', 640, 284);
+  textOutlined(ctx, 'Run the stall: take tickets, chop, grill, plate and serve before patience runs out.', 640, 356, 20, CREAM, 'center', 700);
   const menu = game.menuToday;
-  text(ctx, 'ON THE MENU', 640, 388, 16, '#ffd94d', 'center', 800);
+  textOutlined(ctx, 'ON THE MENU', 640, 400, 16, '#ffd94d', 'center', 800);
   menu.forEach((recipe, i) => {
     const x = 640 + (i - (menu.length - 1) / 2) * 118;
     recipe.needs.forEach((need, j) => {
-      drawFood(ctx, need, x + (j - (recipe.needs.length - 1) / 2) * 26, 428, 11);
+      drawFood(ctx, need, x + (j - (recipe.needs.length - 1) / 2) * 26, 436, 11);
     });
-    text(ctx, recipe.name, x, 458, 12.5, CREAM, 'center', 700);
-    text(ctx, `$${recipe.price}`, x, 476, 12.5, '#7ec850', 'center', 700);
+    text(ctx, recipe.name, x, 466, 12.5, CREAM, 'center', 700);
+    textOutlined(ctx, `$${recipe.price}`, x, 484, 12.5, '#ffd94d', 'center', 800);
   });
   // Start button (clickable) and the controls.
   ctx.fillStyle = '#e8483f';
   rr(ctx, 520, 520, 240, 58, 14); ctx.fill();
+  ctx.strokeStyle = '#ffd94d'; ctx.lineWidth = 3;
+  rr(ctx, 524, 524, 232, 50, 11); ctx.stroke();
   text(ctx, '▶  START DAY 1', 640, 550, 24, '#fff', 'center', 800);
   text(ctx, 'Move: WASD / arrows · Interact: E · Trash hand: walk to the bin · Pause: P · Mute: M', 640, 622, 17, 'rgba(255,246,224,0.85)', 'center', 600);
   text(ctx, 'Plates live on the Plates counter — park a half-built plate there while you run the grill.', 640, 652, 16, 'rgba(255,246,224,0.65)', 'center', 600);
@@ -462,7 +683,7 @@ function drawResults(ctx, game) {
   ctx.fillStyle = 'rgba(43,24,10,0.78)';
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   const s = game.lastDay;
-  text(ctx, game.stallClosed ? 'THE STALL CLOSES' : `DAY ${game.day} DONE!`, 640, 168, 52, '#ffd94d', 'center', 800);
+  displayText(ctx, game.stallClosed ? 'THE STALL CLOSES' : `DAY ${game.day} DONE!`, 640, 168, 52, '#ffd94d');
   const rows = [
     ['Dishes served', `${s.served}`],
     ['Coins earned', `🪙 ${s.coins}`],
@@ -475,6 +696,21 @@ function drawResults(ctx, game) {
     text(ctx, value, 580, 248 + i * 44, 21, '#ffd94d', 'left', 800);
   });
   text(ctx, s.verdict, 640, 492, 22, '#ffb35c', 'center', 700);
+  // The regulars, happy at the bottom of the board — and the chef,
+  // drawn again on top of the dim so the day ends on a face, not a ghost.
+  const fans = [
+    { id: 3, look: 1, patienceMax: 1, patienceLeft: 1 },
+    { id: 5, look: 4, patienceMax: 1, patienceLeft: 1 },
+    { id: 8, look: 0, patienceMax: 1, patienceLeft: 1 },
+    { id: 2, look: 3, patienceMax: 1, patienceLeft: 1 },
+  ];
+  fans.forEach((fan, i) => drawCustomer(ctx, fan, 470 + i * 113, 748));
+  // The chef takes a bow at the bottom-right of the board.
+  const chef = game.chef;
+  const ox = chef.x; const oy = chef.y; const of = chef.facing; const oc = chef.carry;
+  chef.x = 1060; chef.y = 700; chef.facing = -1; chef.carry = null; chef.moving = false;
+  drawChef(ctx, game);
+  chef.x = ox; chef.y = oy; chef.facing = of; chef.carry = oc;
   if (!game.stallClosed) {
     ctx.fillStyle = '#2e7d32';
     rr(ctx, 500, 540, 280, 56, 14); ctx.fill();
@@ -488,11 +724,13 @@ function drawResults(ctx, game) {
   }
 }
 
-// The full frame: room, stations, tickets, chef, effects, then any screen.
+// The full frame: room, stations, tickets, customers, chef, effects,
+// warm light, then any screen.
 export function render(ctx, game) {
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
   drawRoom(ctx, game);
   drawTickets(ctx, game);
+  drawCustomers(ctx, game);
   const active = game.state === 'playing' ? game.activeStation : null;
   for (const station of STATIONS) {
     drawStation(ctx, game, station, station === active);
@@ -503,6 +741,12 @@ export function render(ctx, game) {
   }
   drawChef(ctx, game);
   drawFx(ctx, game);
+  // Warm evening light: a soft vignette that keeps the centre bright.
+  const vig = ctx.createRadialGradient(640, 380, 260, 640, 400, 780);
+  vig.addColorStop(0, 'rgba(255,190,90,0)');
+  vig.addColorStop(1, 'rgba(70,25,0,0.22)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   if (game.state === 'playing' || game.state === 'paused') drawHud(ctx, game);
   if (game.state === 'title') drawTitle(ctx, game);
   if (game.state === 'over') drawResults(ctx, game);

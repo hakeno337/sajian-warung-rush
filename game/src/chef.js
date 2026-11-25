@@ -17,6 +17,7 @@ export class Chef {
     this.carry = null; // { type:'item', id } | { type:'plate', items:[ids] }
     this.storedPlates = []; // plates parked on the plating counter
     this.nudge = 0; // seconds of "denied" shake left, set by interact()
+    this.chopT = 0; // seconds of chopping lean left, set by a chop stroke
   }
 
   reset() {
@@ -39,6 +40,7 @@ export class Chef {
     this.x = Math.max(FLOOR.x + 20, Math.min(FLOOR.x + FLOOR.w - 20, this.x));
     this.y = Math.max(FLOOR.y + 24, Math.min(FLOOR.y + FLOOR.h - 10, this.y));
     if (this.nudge > 0) this.nudge -= dt;
+    if (this.chopT > 0) this.chopT -= dt;
   }
 
   deny(sfx) {
@@ -85,10 +87,13 @@ export class Chef {
         } else if (!cooking.boardDone(station.id)) {
           if (this.carry && this.carry.type === 'item') {
             this.deny(sfx);
-          } else if (cooking.chop(station.id) === 'done' && !this.carry) {
-            // The finishing stroke: the prepped piece goes straight to hand.
-            this.carry = { type: 'item', id: cooking.takeFromBoard(station.id) };
-            sfx.pickup();
+          } else {
+            this.chopT = 0.3; // lean into the board for the stroke
+            if (cooking.chop(station.id) === 'done' && !this.carry) {
+              // The finishing stroke: the prepped piece goes straight to hand.
+              this.carry = { type: 'item', id: cooking.takeFromBoard(station.id) };
+              sfx.pickup();
+            }
           }
         } else if (!this.carry) {
           this.carry = { type: 'item', id: cooking.takeFromBoard(station.id) };
